@@ -9,9 +9,12 @@ Instructions:
     4. Run: pytest tests/ -v
 """
 
+import logging
 import os
 import time
 from typing import Any, Callable
+
+
 
 # ---------------------------------------------------------------------------
 # Estimated costs per 1M INPUT & OUTPUT tokens (USD) as of March 2026
@@ -29,7 +32,7 @@ PRICING_1M_TOKENS = {
 # Standard Model Identifiers
 OPENAI_MODEL = "gpt-4o"
 OPENAI_MINI_MODEL = "gpt-4o-mini"
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 ANTHROPIC_MODEL = "claude-3-5-haiku"
 
 
@@ -67,8 +70,41 @@ def call_openai(
     """
     # TODO: Import OpenAI, instantiate client, call chat.completions.create with parameters,
     #       measure execution start/end time, extract text and token usage, and return them.
-    raise NotImplementedError("Implement call_openai")
+    from openai import OpenAI
+    
+    # Khởi tạo client
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+    # Đo thời gian bắt đầu
+    start = time.time()
+
+    # Gọi OpenAI API
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+
+    # Tính latency
+    latency = time.time() - start
+
+    # Lấy nội dung phản hồi
+    response_text = response.choices[0].message.content
+
+    # Lấy token usage
+    input_tokens = response.usage.prompt_tokens
+    output_tokens = response.usage.completion_tokens
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+
+    return response_text, latency, usage
 
 # ---------------------------------------------------------------------------
 # Task 2 — Call Google Gemini 2.5 (Standard Practical Model)
@@ -115,7 +151,47 @@ def call_gemini(
     """
     # TODO: Initialize Gemini client, set config parameters, call generate_content,
     #       measure latency, extract response text and usage metadata, and return the tuple.
-    raise NotImplementedError("Implement call_gemini")
+        # 1. Khởi tạo Gemini client
+    from google import genai
+    from google.genai import types    
+        
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+    # 2. Cấu hình tham số sinh
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_tokens,
+    )
+
+    # 3. Đo thời gian bắt đầu
+    start = time.time()
+
+    # 4. Gọi Gemini API
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=config,
+    )
+
+    # 5. Tính latency
+    latency = time.time() - start
+
+    # 6. Lấy nội dung phản hồi
+    response_text = response.text
+
+    # 7. Lấy token usage
+    input_tokens = response.usage_metadata.prompt_token_count
+    output_tokens = response.usage_metadata.candidates_token_count
+
+    usage = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+
+    # 8. Trả về kết quả
+    return response_text, latency, usage
+    
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +277,63 @@ def streaming_chatbot() -> None:
         - Keep history limited to the last 3 turns to optimize context window and costs.
     """
     # TODO: Setup interactive session, prompt user for input, stream response, and update history.
-    raise NotImplementedError("Implement streaming_chatbot")
+    # 1. Khởi tạo Gemini client
+    from google import genai
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+    # 2. Lịch sử hội thoại
+    history = []
+
+    print("Gemini Chatbot (type 'quit' or 'exit' to end)")
+    print("-" * 50)
+
+    while True:
+        # 3. Nhận câu hỏi từ người dùng
+        prompt = input("\nYou: ").strip()
+
+        # 4. Thoát chatbot
+        if prompt.lower() in ("quit", "exit"):
+            print("Goodbye!")
+            break
+
+        if not prompt:
+            continue
+
+        # 5. Thêm tin nhắn người dùng vào history
+        history.append({
+            "role": "user",
+            "parts": [{"text": prompt}]
+        })
+
+        # 6. Giới hạn lịch sử ở 6 tin nhắn = 3 lượt hội thoại
+        history = history[-6:]
+
+        print("Gemini: ", end="", flush=True)
+
+        # 7. Gọi API streaming
+        response_stream = client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=history,
+        )
+
+        # 8. In từng chunk khi nhận được
+        response_text = ""
+
+        for chunk in response_stream:
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                response_text += chunk.text
+
+        print()
+
+        # 9. Lưu câu trả lời của Gemini vào history
+        history.append({
+            "role": "model",
+            "parts": [{"text": response_text}]
+        })
+
+        # 10. Tiếp tục giới hạn history sau khi thêm câu trả lời
+        history = history[-6:]
 
 
 # ---------------------------------------------------------------------------
